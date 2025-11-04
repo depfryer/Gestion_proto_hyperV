@@ -1,118 +1,109 @@
-param ($choix, $Nom_Ordinateur, $Groupe='ecole')
+# -*- coding: utf-8 -*-
 
-#################
-##
-# Variable
-##
-##################
+param (
+    [string]$choix,
+    [string]$Nom_Ordinateur,
+    [string]$Groupe = 'travail'
+)
 
-$Switch = 'Interne' # nom de la carte trouvable via Get-VMNetworkAdapter -All
+$Switch = 'Default Switch'
+$CPU_SRV = 3
+$MEM_SRV = 3GB
 
-$CPU_SRV = 3 # Nombre de CPU a allouer par Serveurs 
-$CPU_CLI = 1 # Nombre de CPU a allouer par clients
-$DEF_PATH = 'E:\Hyper_V\VHD' # Chemin vers le dossier hyper V
-#Groupe sert a pouvoir supprimer toutes les VM concerner facilement
+$CPU_CLI = 1
+$MEM_CLI = 1GB
+
+$CPU_UBUNTU = 2
+$MEM_UBUNTU = 2GB
+
+$DEF_PATH = 'E:\Hyper_V\VHD'
 
 Clear-Host
 
-#################
-##
-# verification et creation du groupe pour retrouver les Vm plus facilement par la suite
-##
-##################
-$a = $null
-$a = Get-VMGroup -Name $Groupe
-if ( $a -eq $null) {
-    Write-Host  -ForegroundColor Green 'Creation groupe => ' $Groupe 
+# Vérification du groupe
+if (-not (Get-VMGroup -Name $Groupe -ErrorAction SilentlyContinue)) {
+    Write-Host -ForegroundColor Green "Création du groupe => $Groupe"
     New-VMGroup -Name $Groupe -GroupType VMCollectionType
 }
-Write-Host  -ForegroundColor DarkGray 'Groupe actuel => ' $Groupe
 
-    Write-Host ''
+Write-Host -ForegroundColor DarkGray "Groupe actuel => $Groupe"
+Write-Host ""
 
-
-#################
-##
-# si le choix n'a pas deja été fait, il sera demander ici 
-##
-##################
-
-
-if ($choix -eq $null) {
-Write-Host 'Nouveaux Serveur : 1'
-Write-Host 'Nouveaux Client : 2'
-Write-Host 'Nettoyage : nettoyage'
-
-$choix = Read-Host -Prompt 'Choix'
-
+# Choix interactif si non défini
+if (-not $choix) {
+    Write-Host "1 : Nouveau Serveur Windows"
+    Write-Host "2 : Nouveau Client Windows"
+    Write-Host "3 : Nouveau Serveur Ubuntu"
+    Write-Host "nettoyage : Supprimer les VM du groupe"
+    $choix = Read-Host -Prompt "Choix"
 }
 
-if ($Nom_Ordinateur -eq $null -and $choix -ne 'nettoyage') {
-$Nom = Read-Host -Prompt 'Nom de lordinateur'
-
+# Nom de l'ordinateur
+if ($Nom_Ordinateur) {
+    $Nom = $Nom_Ordinateur
+} elseif ($choix -ne 'nettoyage') {
+    $Nom = Read-Host -Prompt "Nom de l'ordinateur"
 }
-
-#################
-##
-# changement des variables en fonctions des choix defini lors de l'appel ou de la partie precedente
-##
-##################
 
 $flag = $false
- 
-If($choix -eq "1") 
-{
-    $smallPath = $DEF_PATH + '\Source\Source.Windows.SRV.vhdx'
-    $cpu = $CPU_SRV
-    $memStart = 3GB
-    $flag = $true
-}
-elseif ($choix -eq "2") 
-{
-    $smallPath = $DEF_PATH + '\Source\Source.Windows10.Pro.vhdx'
-    $cpu = $CPU_CLI
-    $memStart = 1GB
+$secureboot = $true
 
-    $flag = $true
-
-}
-elseif ($choix -eq "nettoyage") 
-{
-    #################
-    ##
-    # partie permettant le nettoyage de toute les VM qui ont été faite
-    ##
-    ##################
-    Write-Host -ForegroundColor Green 'debut du nettoyage'
-    $ListVM = Get-VMGroup -Name ecole
-
-    Foreach($VM in $ListVM.VMMembers) 
-    {
-        $pathVHD = Get-VHD -VMId $VM.Id
-        Remove-VM $VM -Force
-        Remove-Item $pathVHD.Path -Force
+switch ($choix) {
+    "1" {
+        $smallPath = "$DEF_PATH\Source\Source.Windows.SRV.vhdx"
+        $cpu = $CPU_SRV; $memStart = $MEM_SRV; $flag = $true
     }
-    Write-Host -ForegroundColor Green 'Fin nettoyage'
+    "2" {
+        $smallPath = "$DEF_PATH\Source\Source.Windows11.Pro.vhdx"
+        $cpu = $CPU_CLI; $memStart = $MEM_CLI; $flag = $true
+    }
+    "3" {
+        $smallPath = "$DEF_PATH\Source\Source.Ubuntu24.vhdx"
+        $cpu = $CPU_CLI; $memStart = $MEM_UBUNTU; $flag = $true
+        $secureboot = $false
+    }
+    "nettoyage" {
+        $ListVM = Get-VMGroup -Name $Groupe -ErrorAction SilentlyContinue
+        if (-not $ListVM) {
+            Write-Host -ForegroundColor Yellow "Aucun groupe '$Groupe' trouvé."; return
+        }
+        $confirm = Read-Host "Confirmer la suppression du groupe $Groupe ? (o/n)"
+        if ($confirm -ne 'o') { return }
 
-
+        Write-Host -ForegroundColor Green "Début du nettoyage..."
+        foreach ($VM in $ListVM.VMMembers) {
+            $pathVHD = Get-VHD -VMId $VM.Id
+            Remove-VM $VM -Force
+            Remove-Item $pathVHD.Path -Force
+        }
+        Write-Host -ForegroundColor Green "Fin du nettoyage."
+        return
+    }
+    default {
+        Write-Host "Choix invalide."; return
+    }
 }
-Get-VMGroup -Name ecole | ForEach-Object VMMembers
 
-
-#################
-##
-# creation du disque de differentiation et de la VM le concernant
-# on change en même temps le nombre de CPU + on le rajoute au groupe
-##
-##################
-if($flag)
-{
-    Write-Host  -ForegroundColor Green 'Creation Disque Dur'
-    New-VHD -ParentPath $smallPath -Path $DEF_PATH\$Groupe.$Nom.vhdx -Differencing
-
-    Write-Host  -ForegroundColor Green 'Creation Machine'
-    $a = New-VM -VHDPath $DEF_PATH\$Groupe.$Nom.vhdx -Generation 2 -Name $Nom -MemoryStartupBytes $memStart -SwitchName Interne
-
-    Set-VMProcessor -VMName $Nom -Count $cpu
-    Add-VMGroupMember -Name $Groupe -VM $a
+if (-not (Test-Path $smallPath)) {
+    Write-Error "Le fichier source $smallPath est introuvable."
+    exit
 }
+
+Write-Host -ForegroundColor Green "Création du disque différencié..."
+New-VHD -ParentPath $smallPath -Path "$DEF_PATH\$Groupe.$Nom.vhdx" -Differencing
+
+Write-Host -ForegroundColor Green "Création de la machine virtuelle..."
+$vm = New-VM -VHDPath "$DEF_PATH\$Groupe.$Nom.vhdx" -Generation 2 -Name $Nom -MemoryStartupBytes $memStart -SwitchName $Switch
+
+Set-VMProcessor -VMName $Nom -Count $cpu
+Add-VMGroupMember -Name $Groupe -VM $vm
+if ($secureboot) {
+    Set-VMFirmware -VMName $Nom -EnableSecureBoot On
+    Write-Host -ForegroundColor Yellow "Secure Boot activé"
+}
+else {
+    Set-VMFirmware -VMName $Nom -EnableSecureBoot Off
+    Write-Host -ForegroundColor Yellow "Secure Boot désactivé"
+}
+
+Write-Host -ForegroundColor Cyan "VM '$Nom' créée avec succès dans le groupe '$Groupe'"
