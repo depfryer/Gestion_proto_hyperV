@@ -1,5 +1,4 @@
-Ah, je comprends ! Voici le README **intégralement dans un bloc de code Markdown**, comme demandé :
-# miniScript_ecole
+# Gestion_proto_hyperV
 
 ## Description
 Ce script PowerShell permet de créer et gérer facilement des machines virtuelles Hyper-V pour un environnement scolaire ou de test. Il automatise la création de disques différenciés, l'allocation des ressources (CPU, RAM), la gestion de Secure Boot et la suppression de groupes de VM.
